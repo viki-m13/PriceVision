@@ -15,7 +15,7 @@ from pathlib import Path
 from models import Leak, LeakType, PageResult, Prospect, Severity, SiteAudit
 
 
-DATA_DIR = Path("output/data")
+DATA_DIR = Path(os.environ.get("LEAKENGINE_DATA_DIR", "output/data"))
 
 
 def _ensure_dirs() -> None:

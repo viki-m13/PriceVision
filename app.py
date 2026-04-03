@@ -35,10 +35,16 @@ _pipeline_running = False
 _pipeline_lock = threading.Lock()
 
 
+_PROJECT_ROOT = Path(__file__).parent
+
 def _get_config() -> Config:
-    if not Path("config.yaml").exists():
-        generate_default_config()
-    return load_config()
+    config_path = _PROJECT_ROOT / "config.yaml"
+    if not config_path.exists():
+        generate_default_config(config_path)
+    return load_config(config_path)
+
+def _reports_dir() -> Path:
+    return Path(os.environ.get("LEAKENGINE_REPORTS_DIR", "output/reports"))
 
 
 @app.context_processor
@@ -187,19 +193,18 @@ def audit_detail(slug):
 @app.route("/report/<path:slug>")
 def view_report(slug):
     """Serve the generated HTML report for a specific audit."""
-    config = _get_config()
-    report_path = Path(config.pipeline.reports_dir) / f"{slug}.html"
+    reports = _reports_dir()
+    report_path = reports / f"{slug}.html"
     if report_path.exists():
         return report_path.read_text()
 
-    # Generate report on the fly
+    # Generate report on the fly from stored audit data
     audits = load_audits()
     for a in audits:
         a_slug = a.url.replace("https://", "").replace("http://", "").replace("/", "_")
         if a_slug == slug:
-            from reporter.html_report import save_report
-            save_report(a, str(report_path))
-            return report_path.read_text()
+            from reporter.html_report import generate_html_report
+            return generate_html_report(a)
 
     return "Report not found", 404
 
@@ -266,7 +271,8 @@ def update_config():
             "schedule_interval_hours": config.pipeline.schedule_interval_hours,
         },
     }
-    with open("config.yaml", "w") as f:
+    config_path = _PROJECT_ROOT / "config.yaml"
+    with open(config_path, "w") as f:
         yaml.dump(data, f, default_flow_style=False)
 
     return redirect(url_for("pipeline_page"))
@@ -348,7 +354,9 @@ def scan_url():
         save_audit(audit)
 
         safe = url.replace("https://", "").replace("http://", "").replace("/", "_").rstrip("_")
-        save_report(audit, f"{config.pipeline.reports_dir}/{safe}.html")
+        reports = _reports_dir()
+        reports.mkdir(parents=True, exist_ok=True)
+        save_report(audit, str(reports / f"{safe}.html"))
 
     asyncio.run(_scan())
 

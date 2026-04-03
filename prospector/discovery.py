@@ -280,6 +280,8 @@ async def discover_prospects(
         tasks.append(search_google_cse(query, google_api_key, google_cse_id, max_per_source))
 
     # Scraping methods (no API key needed)
+    from prospector.scraper import discover_via_search
+    tasks.append(discover_via_search(niche, location, max_per_source))
     tasks.append(scrape_yellowpages(niche, location, max_per_source))
 
     results = await asyncio.gather(*tasks, return_exceptions=True)

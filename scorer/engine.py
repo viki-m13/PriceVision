@@ -62,19 +62,35 @@ def score_page(page: PageResult) -> list[Leak]:
 
     # 3. No forms on key pages
     if is_key and not page.has_forms and page.status_code == 200:
-        leaks.append(Leak(
-            leak_type=LeakType.BROKEN_FORM,
-            severity=Severity.CRITICAL,
-            page_url=page.url,
-            description="This key page has no contact or lead capture form. Visitors with intent have no way to convert.",
-            recommendation="Add a lead capture form above the fold. Even a simple name + email + phone form will capture leads.",
-            estimated_monthly_impact="$500-5,000+ in lost leads depending on traffic",
-        ))
-
-    # 4. Has forms but form count is suspicious (0 action, no method)
-    if page.has_forms and page.form_count > 0:
-        # Forms exist — we'll flag if they look broken in the form test
-        pass
+        # If the page has CTAs and phone numbers, it likely uses JS-rendered forms
+        # (Calendly, HubSpot, ServiceTitan, etc.) — downgrade severity
+        if page.has_cta and page.has_phone:
+            leaks.append(Leak(
+                leak_type=LeakType.NO_LEAD_CAPTURE,
+                severity=Severity.LOW,
+                page_url=page.url,
+                description="No HTML form detected (may use JavaScript-rendered forms). Verify forms work for visitors with JS disabled or slow connections.",
+                recommendation="Ensure your lead capture form works reliably. Consider adding a simple HTML fallback form.",
+                estimated_monthly_impact="Potential lost leads from slow/no-JS visitors",
+            ))
+        elif page.has_cta or page.has_phone:
+            leaks.append(Leak(
+                leak_type=LeakType.BROKEN_FORM,
+                severity=Severity.MEDIUM,
+                page_url=page.url,
+                description="Key page has CTAs but no detectable lead capture form. Visitors may not be able to convert online.",
+                recommendation="Add a lead capture form above the fold — name, email, phone at minimum.",
+                estimated_monthly_impact="$300-2,000/mo in missed online leads",
+            ))
+        else:
+            leaks.append(Leak(
+                leak_type=LeakType.BROKEN_FORM,
+                severity=Severity.CRITICAL,
+                page_url=page.url,
+                description="This key page has no contact form, no CTA, and no phone number. Visitors with intent have no way to convert.",
+                recommendation="Add a lead capture form above the fold. Even a simple name + email + phone form will capture leads.",
+                estimated_monthly_impact="$500-5,000+ in lost leads depending on traffic",
+            ))
 
     # 5. No CTA on homepage or key pages
     if is_key and not page.has_cta and page.status_code == 200:
@@ -196,6 +212,22 @@ def score_site(pages: list[PageResult], url: str) -> SiteAudit:
     for page in pages:
         page_leaks = score_page(page)
         all_leaks.extend(page_leaks)
+
+    # Deduplicate: keep only the worst instance of each leak type
+    # This prevents "no email capture" showing up 8 times across pages
+    best_per_type: dict[str, Leak] = {}
+    severity_rank = {Severity.CRITICAL: 0, Severity.HIGH: 1, Severity.MEDIUM: 2, Severity.LOW: 3, Severity.INFO: 4}
+    for leak in all_leaks:
+        key = leak.leak_type.value
+        if key not in best_per_type or severity_rank.get(leak.severity, 5) < severity_rank.get(best_per_type[key].severity, 5):
+            best_per_type[key] = leak
+    # Exception: broken links and dead pages can legitimately appear multiple times
+    multi_types = {LeakType.DEAD_LINK.value, LeakType.SLOW_PAGE.value}
+    deduped = list(best_per_type.values())
+    for leak in all_leaks:
+        if leak.leak_type.value in multi_types and leak != best_per_type.get(leak.leak_type.value):
+            deduped.append(leak)
+    all_leaks = deduped
 
     # Calculate overall score (100 = perfect, 0 = disaster)
     # Deduct points per leak by severity

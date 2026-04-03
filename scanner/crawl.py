@@ -104,9 +104,24 @@ def analyze_page(html: str, url: str, status_code: int, load_time_ms: float) -> 
     meta = soup.find("meta", attrs={"name": "description"})
     meta_desc = meta.get("content", "") if meta else ""
 
-    # Forms
+    # Forms — check both HTML forms and JS-rendered form indicators
     forms = soup.find_all("form")
     form_count = len(forms)
+
+    # Detect JS form frameworks / embedded scheduling / booking tools
+    js_form_indicators = [
+        "calendly", "acuity", "schedulista", "hubspot", "typeform",
+        "jotform", "wufoo", "gravity-form", "wpforms", "formidable",
+        "ninja-forms", "contact-form-7", "cf7", "elementor-form",
+        "mailchimp", "convertkit", "activecampaign", "drip",
+        "housecallpro", "servicetitan", "jobber", "fieldedge",
+        "birdeye", "podium", "weave", "demandforce",
+        "formstack", "cognito", "123formbuilder",
+    ]
+    has_js_form = any(ind in html.lower() for ind in js_form_indicators)
+    if has_js_form and form_count == 0:
+        # JS form framework detected — treat as having a form
+        form_count = 1
 
     # CTA detection
     has_cta = False
