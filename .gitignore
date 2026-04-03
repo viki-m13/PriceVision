@@ -3,6 +3,8 @@ __pycache__/
 .env
 screenshots/
 audits/
+output/
+config.yaml
 *.egg-info/
 dist/
 build/
