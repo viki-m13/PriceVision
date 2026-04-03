@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}LeakEngine{% endblock %}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f1a; color: #e0e0e0; min-height: 100vh; }
+
+  /* Nav */
+  nav { background: #1a1a2e; border-bottom: 1px solid #2a2a4a; padding: 0 24px; display: flex; align-items: center; height: 56px; }
+  nav .logo { font-size: 18px; font-weight: 800; color: #00d4aa; margin-right: 32px; }
+  nav a { color: #8888aa; text-decoration: none; font-size: 14px; font-weight: 500; padding: 16px 12px; border-bottom: 2px solid transparent; transition: all 0.2s; }
+  nav a:hover, nav a.active { color: #e0e0e0; border-bottom-color: #00d4aa; }
+  nav .spacer { flex: 1; }
+  nav .status { font-size: 12px; color: #666; }
+
+  /* Layout */
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+  /* Cards */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .stat-card { background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 12px; padding: 20px; }
+  .stat-card .label { font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 1px; }
+  .stat-card .value { font-size: 32px; font-weight: 800; margin-top: 4px; }
+  .stat-card .value.green { color: #00d4aa; }
+  .stat-card .value.red { color: #ff4757; }
+  .stat-card .value.yellow { color: #ffa502; }
+  .stat-card .value.blue { color: #3498db; }
+
+  /* Table */
+  .table-wrap { background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 12px; overflow: hidden; }
+  .table-header { padding: 16px 20px; border-bottom: 1px solid #2a2a4a; display: flex; justify-content: space-between; align-items: center; }
+  .table-header h2 { font-size: 16px; font-weight: 700; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 12px 20px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #666; border-bottom: 1px solid #2a2a4a; }
+  td { padding: 14px 20px; border-bottom: 1px solid #1f1f35; font-size: 14px; }
+  tr:hover { background: #1f1f35; }
+  tr:last-child td { border-bottom: none; }
+
+  /* Badges */
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+  .badge.critical { background: #ff4757; color: white; }
+  .badge.high { background: #e67e22; color: white; }
+  .badge.medium { background: #ffa502; color: #333; }
+  .badge.low { background: #3498db; color: white; }
+
+  /* Score */
+  .score { display: inline-block; font-weight: 800; font-size: 16px; }
+  .score.bad { color: #ff4757; }
+  .score.ok { color: #ffa502; }
+  .score.good { color: #00d4aa; }
+
+  /* Buttons */
+  .btn { display: inline-block; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; border: none; transition: all 0.2s; }
+  .btn-primary { background: #00d4aa; color: #0f0f1a; }
+  .btn-primary:hover { background: #00e6b8; }
+  .btn-secondary { background: #2a2a4a; color: #e0e0e0; }
+  .btn-secondary:hover { background: #3a3a5a; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn-danger { background: #ff4757; color: white; }
+
+  /* Forms */
+  .form-group { margin-bottom: 16px; }
+  .form-group label { display: block; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 10px 14px; background: #0f0f1a; border: 1px solid #2a2a4a; border-radius: 6px; color: #e0e0e0; font-size: 14px; }
+  .form-group input:focus, .form-group textarea:focus { outline: none; border-color: #00d4aa; }
+
+  /* Panels */
+  .panel { background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  .panel h3 { font-size: 14px; font-weight: 700; margin-bottom: 12px; }
+
+  /* Leak detail */
+  .leak-item { padding: 12px; margin-bottom: 8px; border-radius: 8px; border-left: 3px solid #2a2a4a; background: #12121f; }
+  .leak-item.critical { border-left-color: #ff4757; }
+  .leak-item.high { border-left-color: #e67e22; }
+  .leak-item.medium { border-left-color: #ffa502; }
+  .leak-item.low { border-left-color: #3498db; }
+  .leak-item .leak-title { font-weight: 700; font-size: 13px; margin-bottom: 4px; }
+  .leak-item .leak-desc { font-size: 13px; color: #999; }
+  .leak-item .leak-fix { font-size: 12px; color: #00d4aa; margin-top: 6px; }
+  .leak-item .leak-impact { font-size: 11px; color: #ffa502; margin-top: 4px; }
+
+  /* Utility */
+  .text-muted { color: #666; }
+  .text-sm { font-size: 12px; }
+  .mt-16 { margin-top: 16px; }
+  .mb-16 { margin-bottom: 16px; }
+  .flex { display: flex; }
+  .gap-8 { gap: 8px; }
+  .gap-16 { gap: 16px; }
+  .items-center { align-items: center; }
+  a { color: #00d4aa; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Pipeline status */
+  .pipeline-status { display: flex; align-items: center; gap: 8px; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .status-dot.running { background: #00d4aa; animation: pulse 1.5s infinite; }
+  .status-dot.idle { background: #666; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  /* Empty state */
+  .empty-state { text-align: center; padding: 60px 20px; color: #666; }
+  .empty-state h3 { font-size: 18px; color: #888; margin-bottom: 8px; }
+  .empty-state p { font-size: 14px; margin-bottom: 20px; }
+</style>
+</head>
+<body>
+<nav>
+  <span class="logo">LeakEngine</span>
+  <a href="/" class="{{ 'active' if active_page == 'dashboard' }}">Dashboard</a>
+  <a href="/prospects" class="{{ 'active' if active_page == 'prospects' }}">Prospects</a>
+  <a href="/audits" class="{{ 'active' if active_page == 'audits' }}">Audits</a>
+  <a href="/pipeline" class="{{ 'active' if active_page == 'pipeline' }}">Pipeline</a>
+  <span class="spacer"></span>
+  <span class="status text-sm text-muted" id="status">{{ total_prospects }} prospects &middot; {{ total_audits }} audits</span>
+</nav>
+<div class="container">
+  {% block content %}{% endblock %}
+</div>
+</body>
+</html>

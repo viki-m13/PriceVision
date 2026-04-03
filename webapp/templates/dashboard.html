@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - LeakEngine{% endblock %}
+{% block content %}
+
+<h1 style="font-size: 20px; margin-bottom: 20px;">Dashboard</h1>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="label">Total Prospects</div>
+    <div class="value blue">{{ total_prospects }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Audited</div>
+    <div class="value green">{{ total_audits }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Pending Scan</div>
+    <div class="value yellow">{{ pending_scan }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Critical Leaks Found</div>
+    <div class="value red">{{ critical_leaks }}</div>
+  </div>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="label">Avg Health Score</div>
+    <div class="value {{ 'red' if avg_score < 40 else ('yellow' if avg_score < 70 else 'green') }}">{{ avg_score }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Total Leaks Detected</div>
+    <div class="value red">{{ total_leaks }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Pipeline Runs</div>
+    <div class="value blue">{{ pipeline_runs }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Top Niche</div>
+    <div class="value" style="font-size: 18px; color: #00d4aa;">{{ top_niche or 'N/A' }}</div>
+  </div>
+</div>
+
+{% if worst_audits %}
+<div class="table-wrap">
+  <div class="table-header">
+    <h2>Worst Scoring Sites (Best Outreach Targets)</h2>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Business</th>
+        <th>Score</th>
+        <th>Leaks</th>
+        <th>Est. Waste</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for audit in worst_audits %}
+      <tr>
+        <td>
+          <div style="font-weight: 600;">{{ audit.business_name or audit.url }}</div>
+          <div class="text-sm text-muted">{{ audit.url }}</div>
+        </td>
+        <td><span class="score {{ 'bad' if audit.overall_score < 40 else ('ok' if audit.overall_score < 70 else 'good') }}">{{ audit.overall_score }}</span></td>
+        <td>{{ audit.leaks | length }}</td>
+        <td style="color: #ffa502; font-weight: 600;">{{ audit.estimated_monthly_waste }}</td>
+        <td>
+          <a href="/audit/{{ audit.url | replace('https://', '') | replace('http://', '') | replace('/', '_') }}" class="btn btn-sm btn-secondary">View</a>
+          <a href="/report/{{ audit.url | replace('https://', '') | replace('http://', '') | replace('/', '_') }}" class="btn btn-sm btn-primary">Report</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-state">
+  <h3>No audits yet</h3>
+  <p>Run the pipeline to discover and scan businesses automatically.</p>
+  <a href="/pipeline" class="btn btn-primary">Go to Pipeline</a>
+</div>
+{% endif %}
+
+{% endblock %}
