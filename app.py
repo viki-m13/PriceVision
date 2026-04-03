@@ -8,13 +8,12 @@ from __future__ import annotations
 
 import asyncio
 import os
-import threading
 from collections import Counter
 from pathlib import Path
 
 from flask import Flask, redirect, render_template, request, url_for
 
-from config import Config, generate_default_config, load_config
+from config import Config, load_config
 from models import Prospect, Severity
 from storage import (
     get_unscanned_prospects,
@@ -30,21 +29,15 @@ app = Flask(
     template_folder=os.path.join(os.path.dirname(__file__), "webapp", "templates"),
 )
 
-# Global state for pipeline status
-_pipeline_running = False
-_pipeline_lock = threading.Lock()
-
-
 _PROJECT_ROOT = Path(__file__).parent
-_IS_VERCEL = bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"))
 
 
 def _get_config() -> Config:
-    config_path = _PROJECT_ROOT / "config.yaml"
-    if config_path.exists():
-        return load_config(config_path)
-    # On Vercel or when config doesn't exist, use defaults + env vars
-    return load_config(config_path)  # load_config handles missing file
+    # Try project root first, then /tmp (for Vercel)
+    for path in [_PROJECT_ROOT / "config.yaml", Path("/tmp/leakengine_config.yaml")]:
+        if path.exists():
+            return load_config(path)
+    return load_config()  # Returns defaults + env vars
 
 
 def _reports_dir() -> Path:
@@ -226,9 +219,7 @@ def pipeline_page():
         active_page="pipeline",
         config=config,
         pipeline_log=pipeline_log,
-        is_running=_pipeline_running,
         unscanned_count=len(unscanned),
-        is_vercel=_IS_VERCEL,
     )
 
 
@@ -247,83 +238,131 @@ def update_config():
     config.prospector.serpapi_key = request.form.get("serpapi_key", "")
     config.prospector.google_cse_id = request.form.get("google_cse_id", "")
 
-    # Save to config.yaml (skip on Vercel — read-only filesystem)
-    if not _IS_VERCEL:
-        try:
-            import yaml
-            data = {
-                "scan": {
-                    "max_pages": config.scan.max_pages,
-                    "delay_between_scans_seconds": config.scan.delay_between_scans_seconds,
-                },
-                "prospector": {
-                    "niches": config.prospector.niches,
-                    "locations": config.prospector.locations,
-                    "serpapi_key": config.prospector.serpapi_key,
-                    "google_cse_id": config.prospector.google_cse_id,
-                },
-            }
-            config_path = _PROJECT_ROOT / "config.yaml"
-            with open(config_path, "w") as f:
-                yaml.dump(data, f, default_flow_style=False)
-        except Exception:
-            pass
+    # Save config — try project root first, fall back to /tmp
+    try:
+        import yaml
+        data = {
+            "scan": {
+                "max_pages": config.scan.max_pages,
+                "delay_between_scans_seconds": config.scan.delay_between_scans_seconds,
+            },
+            "prospector": {
+                "niches": config.prospector.niches,
+                "locations": config.prospector.locations,
+                "serpapi_key": config.prospector.serpapi_key,
+                "google_cse_id": config.prospector.google_cse_id,
+            },
+        }
+        for path in [_PROJECT_ROOT / "config.yaml", Path("/tmp/leakengine_config.yaml")]:
+            try:
+                with open(path, "w") as f:
+                    yaml.dump(data, f, default_flow_style=False)
+                break
+            except OSError:
+                continue
+    except ImportError:
+        pass
 
     return redirect(url_for("pipeline_page"))
 
 
 # ── Actions ──────────────────────────────────────────────────
 
-def _run_async_in_thread(coro):
-    """Run an async coroutine in a background thread."""
-    global _pipeline_running
-    with _pipeline_lock:
-        if _pipeline_running:
-            return
-        _pipeline_running = True
-
-    def _target():
-        global _pipeline_running
-        try:
-            asyncio.run(coro)
-        finally:
-            _pipeline_running = False
-
-    thread = threading.Thread(target=_target, daemon=True)
-    thread.start()
-
-
 @app.route("/run-pipeline")
 def run_pipeline():
-    """Run the full pipeline."""
-    if _IS_VERCEL:
-        # Vercel serverless can't run long background tasks
-        return redirect(url_for("pipeline_page"))
-    from pipeline import run_full_pipeline
+    """Run discovery + scan inline."""
     config = _get_config()
-    _run_async_in_thread(run_full_pipeline(config))
-    return redirect(url_for("pipeline_page"))
+    niches = config.prospector.niches or ["plumber"]
+    locations = config.prospector.locations or ["Austin TX"]
+
+    async def _pipeline():
+        from prospector.discovery import discover_prospects
+        from scanner.crawl import quick_scan
+        from scorer.engine import score_site
+        from datetime import datetime, timezone
+
+        # Discover
+        all_prospects = []
+        for niche in niches[:2]:  # Limit to avoid timeout
+            for location in locations[:2]:
+                try:
+                    found = await discover_prospects(
+                        niche=niche, location=location,
+                        serpapi_key=config.prospector.serpapi_key,
+                        google_api_key=config.prospector.google_api_key,
+                        google_cse_id=config.prospector.google_cse_id,
+                        max_per_source=10,
+                    )
+                    all_prospects.extend(found)
+                except Exception:
+                    pass
+        save_prospects(all_prospects)
+
+        # Scan first 5 unscanned
+        unscanned = get_unscanned_prospects()[:5]
+        for p in unscanned:
+            try:
+                page = await quick_scan(p.url)
+                audit = score_site([page], p.url)
+                audit.business_name = p.name
+                audit.scanned_at = datetime.now(timezone.utc).isoformat()
+                save_audit(audit)
+            except Exception:
+                pass
+
+    asyncio.run(_pipeline())
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/discover")
 def run_discovery():
-    """Run discovery only."""
-    if _IS_VERCEL:
-        return redirect(url_for("prospects_page"))
-    from pipeline import run_discovery as _run_discovery
+    """Discover prospects inline."""
     config = _get_config()
-    _run_async_in_thread(_run_discovery(config))
+    niches = config.prospector.niches or ["plumber"]
+    locations = config.prospector.locations or ["Austin TX"]
+
+    async def _discover():
+        from prospector.discovery import discover_prospects
+        all_prospects = []
+        for niche in niches[:3]:
+            for location in locations[:3]:
+                try:
+                    found = await discover_prospects(
+                        niche=niche, location=location,
+                        serpapi_key=config.prospector.serpapi_key,
+                        google_api_key=config.prospector.google_api_key,
+                        google_cse_id=config.prospector.google_cse_id,
+                        max_per_source=10,
+                    )
+                    all_prospects.extend(found)
+                except Exception:
+                    pass
+        save_prospects(all_prospects)
+
+    asyncio.run(_discover())
     return redirect(url_for("prospects_page"))
 
 
 @app.route("/scan-all")
 def scan_all():
-    """Scan all unscanned prospects."""
-    if _IS_VERCEL:
-        return redirect(url_for("audits_page"))
-    from pipeline import run_scanning
-    config = _get_config()
-    _run_async_in_thread(run_scanning(config))
+    """Scan unscanned prospects inline (quick scan)."""
+    async def _scan_all():
+        from scanner.crawl import quick_scan
+        from scorer.engine import score_site
+        from datetime import datetime, timezone
+
+        unscanned = get_unscanned_prospects()[:10]
+        for p in unscanned:
+            try:
+                page = await quick_scan(p.url)
+                audit = score_site([page], p.url)
+                audit.business_name = p.name
+                audit.scanned_at = datetime.now(timezone.utc).isoformat()
+                save_audit(audit)
+            except Exception:
+                pass
+
+    asyncio.run(_scan_all())
     return redirect(url_for("audits_page"))
 
 
@@ -334,7 +373,7 @@ def scan_url():
     if not url:
         return redirect(url_for("prospects_page"))
 
-    from scanner.crawl import crawl_site, quick_scan
+    from scanner.crawl import crawl_site
     from scorer.engine import score_site
     from reporter.html_report import save_report
     from datetime import datetime, timezone
@@ -342,12 +381,7 @@ def scan_url():
     config = _get_config()
 
     async def _scan():
-        if _IS_VERCEL:
-            # Quick scan on Vercel (10s serverless timeout)
-            page = await quick_scan(url)
-            pages = [page]
-        else:
-            pages = await crawl_site(url, max_pages=config.scan.max_pages)
+        pages = await crawl_site(url, max_pages=8, check_external_links=False)
         audit = score_site(pages, url)
         audit.scanned_at = datetime.now(timezone.utc).isoformat()
 

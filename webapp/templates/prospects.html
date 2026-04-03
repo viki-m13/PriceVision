@@ -5,8 +5,8 @@
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
   <h1 style="font-size: 20px;">Prospects ({{ prospects | length }})</h1>
   <div class="flex gap-8">
-    <a href="/discover" class="btn btn-primary" onclick="this.textContent='Discovering...'; this.style.opacity=0.6;">Discover New</a>
-    <a href="/scan-all" class="btn btn-secondary" onclick="this.textContent='Scanning...'; this.style.opacity=0.6;">Scan Unscanned</a>
+    <a href="/discover" class="btn btn-primary loading-btn" onclick="startLoading(this, 'Discovering prospects...')">Discover New</a>
+    <a href="/scan-all" class="btn btn-secondary loading-btn" onclick="startLoading(this, 'Scanning prospects...')">Scan Unscanned</a>
   </div>
 </div>
 
@@ -42,7 +42,7 @@
           {% endif %}
         </td>
         <td>
-          <a href="/scan?url={{ p.url }}" class="btn btn-sm btn-secondary">Scan</a>
+          <a href="/scan?url={{ p.url }}" class="btn btn-sm btn-secondary loading-btn" onclick="startLoading(this, 'Scanning site...')">Scan</a>
         </td>
       </tr>
       {% endfor %}
@@ -53,14 +53,13 @@
 {% else %}
 <div class="empty-state">
   <h3>No prospects yet</h3>
-  <p>Add prospects manually or run discovery to find businesses automatically.</p>
-  <a href="/discover" class="btn btn-primary">Discover Prospects</a>
+  <p>Click "Discover New" above to automatically find businesses, or add one manually below.</p>
 </div>
 {% endif %}
 
 <div class="panel mt-16">
   <h3>Add Prospect Manually</h3>
-  <form action="/add-prospect" method="POST">
+  <form action="/add-prospect" method="POST" onsubmit="startLoading(this.querySelector('button'), 'Adding and scanning...')">
     <div style="display: grid; grid-template-columns: 1fr; gap: 12px;" class="form-grid">
       <div class="form-group" style="margin-bottom: 0;">
         <label>Website URL</label>
