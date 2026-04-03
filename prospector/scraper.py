@@ -10,6 +10,12 @@ import asyncio
 import re
 from urllib.parse import urljoin, urlparse, quote_plus
 
+try:
+    import lxml  # noqa: F401
+    _PARSER = "lxml"
+except ImportError:
+    _PARSER = "html.parser"
+
 import httpx
 from bs4 import BeautifulSoup
 
@@ -86,7 +92,7 @@ async def search_duckduckgo(
         if resp.status_code != 200:
             return results
 
-        soup = BeautifulSoup(resp.text, "lxml")
+        soup = BeautifulSoup(resp.text, _PARSER)
         links = soup.find_all("a", class_="result__a")
 
         for link in links[:max_results]:
@@ -183,7 +189,7 @@ async def extract_business_info(url: str) -> dict:
                 return info
 
             html = resp.text
-            text = BeautifulSoup(html, "lxml").get_text(separator=" ", strip=True)
+            text = BeautifulSoup(html, _PARSER).get_text(separator=" ", strip=True)
 
             # Email
             info["email"] = _extract_contact_email(html)
@@ -197,7 +203,7 @@ async def extract_business_info(url: str) -> dict:
                 info["phone"] = phone_match.group(1).strip()
 
             # Business name from title
-            soup = BeautifulSoup(html, "lxml")
+            soup = BeautifulSoup(html, _PARSER)
             title = soup.find("title")
             if title:
                 name = title.get_text(strip=True)

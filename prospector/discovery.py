@@ -10,6 +10,12 @@ import asyncio
 import json
 import os
 import re
+
+try:
+    import lxml  # noqa: F401
+    _PARSER = "lxml"
+except ImportError:
+    _PARSER = "html.parser"
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -138,7 +144,7 @@ async def scrape_yellowpages(
             if resp.status_code != 200:
                 return prospects
 
-            soup = BeautifulSoup(resp.text, "lxml")
+            soup = BeautifulSoup(resp.text, _PARSER)
             results = soup.find_all("div", class_="result")
 
             for result in results[:max_results]:
@@ -189,7 +195,7 @@ async def scrape_yelp(
             if resp.status_code != 200:
                 return prospects
 
-            soup = BeautifulSoup(resp.text, "lxml")
+            soup = BeautifulSoup(resp.text, _PARSER)
 
             # Yelp business links typically contain /biz/
             biz_links = soup.find_all("a", href=re.compile(r"/biz/"))
@@ -230,7 +236,7 @@ async def resolve_yelp_websites(prospects: list[Prospect]) -> list[Prospect]:
 
             try:
                 resp = await client.get(p.url, timeout=15, follow_redirects=True)
-                soup = BeautifulSoup(resp.text, "lxml")
+                soup = BeautifulSoup(resp.text, _PARSER)
 
                 # Look for external website link
                 biz_website = soup.find("a", href=re.compile(r"biz_redir"))

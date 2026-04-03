@@ -14,6 +14,12 @@ from bs4 import BeautifulSoup
 
 from models import PageResult
 
+try:
+    import lxml  # noqa: F401
+    _PARSER = "lxml"
+except ImportError:
+    _PARSER = "html.parser"
+
 
 # Patterns that indicate a CTA
 CTA_PATTERNS = [
@@ -71,7 +77,7 @@ async def fetch_page(client: httpx.AsyncClient, url: str) -> tuple[str, int, flo
 
 def extract_links(html: str, base_url: str) -> list[str]:
     """Extract all internal links from a page."""
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, _PARSER)
     base_domain = urlparse(base_url).netloc
     links = set()
     for a in soup.find_all("a", href=True):
@@ -89,7 +95,7 @@ def extract_links(html: str, base_url: str) -> list[str]:
 
 def analyze_page(html: str, url: str, status_code: int, load_time_ms: float) -> PageResult:
     """Analyze a page for revenue leak signals."""
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, _PARSER)
     text = soup.get_text(separator=" ", strip=True).lower()
 
     # Title
@@ -278,7 +284,7 @@ async def crawl_site(
             # Check for broken links on this page
             if check_external_links:
                 all_links = []
-                soup = BeautifulSoup(html, "lxml")
+                soup = BeautifulSoup(html, _PARSER)
                 for a in soup.find_all("a", href=True):
                     full = urljoin(current_url, a["href"])
                     if full.startswith(("http://", "https://")):
