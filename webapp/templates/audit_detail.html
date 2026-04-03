@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Audit: {{ audit.business_name or audit.url }} - LeakEngine{% endblock %}
+{% block content %}
+
+<div style="margin-bottom: 20px;">
+  <a href="/audits" class="text-sm">&larr; Back to Audits</a>
+</div>
+
+<div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+  <div>
+    <h1 style="font-size: 20px;">{{ audit.business_name or audit.url }}</h1>
+    <div class="text-sm text-muted mt-16" style="margin-top: 4px;">{{ audit.url }} &middot; Scanned {{ audit.scanned_at[:10] if audit.scanned_at else 'N/A' }}</div>
+  </div>
+  <a href="/report/{{ slug }}" class="btn btn-primary">Download Report</a>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="label">Health Score</div>
+    <div class="value {{ 'red' if audit.overall_score < 40 else ('yellow' if audit.overall_score < 70 else 'green') }}">{{ audit.overall_score }}/100</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Total Leaks</div>
+    <div class="value red">{{ audit.leaks | length }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Est. Monthly Waste</div>
+    <div class="value yellow" style="font-size: 20px;">{{ audit.estimated_monthly_waste }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Pages Scanned</div>
+    <div class="value blue">{{ audit.pages_scanned | length }}</div>
+  </div>
+</div>
+
+{% if audit.leaks %}
+<div class="panel">
+  <h3>Detected Revenue Leaks ({{ audit.leaks | length }})</h3>
+  <div style="margin-top: 12px;">
+    {% for leak in audit.leaks %}
+    <div class="leak-item {{ leak.severity.value }}">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span class="leak-title">{{ leak.leak_type.value | replace('_', ' ') | title }}</span>
+        <span class="badge {{ leak.severity.value }}">{{ leak.severity.value }}</span>
+      </div>
+      <div class="leak-desc">{{ leak.description }}</div>
+      <div class="leak-fix">Fix: {{ leak.recommendation }}</div>
+      {% if leak.estimated_monthly_impact %}
+      <div class="leak-impact">Impact: {{ leak.estimated_monthly_impact }}</div>
+      {% endif %}
+      <div class="text-sm text-muted" style="margin-top: 4px;">Page: {{ leak.page_url }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if audit.pages_scanned %}
+<div class="panel">
+  <h3>Pages Scanned ({{ audit.pages_scanned | length }})</h3>
+  <table style="margin-top: 12px;">
+    <thead>
+      <tr>
+        <th>URL</th>
+        <th>Status</th>
+        <th>Load Time</th>
+        <th>Forms</th>
+        <th>CTA</th>
+        <th>Phone</th>
+        <th>Email</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for page in audit.pages_scanned %}
+      <tr>
+        <td class="text-sm" style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ page.url }}</td>
+        <td>
+          {% if page.status_code and page.status_code >= 400 %}
+            <span style="color: #ff4757;">{{ page.status_code }}</span>
+          {% elif page.status_code %}
+            <span style="color: #00d4aa;">{{ page.status_code }}</span>
+          {% else %}
+            <span class="text-muted">-</span>
+          {% endif %}
+        </td>
+        <td>{{ '%.0f' | format(page.load_time_ms) }}ms</td>
+        <td>{{ page.form_count if page.has_forms else '-' }}</td>
+        <td>{{ '✓' if page.has_cta else '✗' }}</td>
+        <td>{{ '✓' if page.has_phone else '✗' }}</td>
+        <td>{{ '✓' if page.has_email_capture else '✗' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% endblock %}

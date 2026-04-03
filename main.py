@@ -1,10 +1,13 @@
 """LeakEngine — Revenue leak detection for businesses.
 
 Usage:
-    python main.py --url https://example-business.com
-    python main.py --url https://example.com --output report.html
-    python main.py --batch prospects.csv --output-dir audits/
-    python main.py --url https://example.com --quick
+    python main.py scan --url https://example-business.com
+    python main.py scan --url https://example.com --quick
+    python main.py scan --batch prospects.csv
+    python main.py pipeline              # Run full pipeline once
+    python main.py server                # Start web dashboard
+    python main.py scheduler             # Run pipeline on interval
+    python main.py scheduler --interval 6  # Every 6 hours
 """
 
 from __future__ import annotations
@@ -21,9 +24,10 @@ from rich.table import Table
 
 from models import Severity, SiteAudit
 from scanner.crawl import crawl_site, quick_scan
-from scorer.engine import score_page, score_site
+from scorer.engine import score_site
 from reporter.html_report import save_report
 from prospector.find import load_prospects_from_csv
+from storage import save_audit
 
 console = Console()
 
@@ -50,36 +54,32 @@ async def audit_url(
 
     console.print(f"[dim]Scanned {len(pages)} page(s). Scoring...[/dim]")
 
-    # Score
     audit = score_site(pages, url)
     audit.scan_duration_seconds = time.monotonic() - start
     audit.scanned_at = datetime.now(timezone.utc).isoformat()
 
-    # Screenshots
     if screenshots:
         try:
             from scanner.screenshot import capture_screenshots
             console.print("[dim]Capturing screenshots...[/dim]")
-            shots = await capture_screenshots(url)
-            for name, path in shots.items():
-                console.print(f"  [dim]Screenshot: {path}[/dim]")
+            await capture_screenshots(url)
         except ImportError:
             console.print("[yellow]Playwright not installed — skipping screenshots[/yellow]")
 
-    # Display results
     _print_results(audit)
 
-    # Save report
     if output:
         report_path = save_report(audit, output)
         console.print(f"\n[bold green]Report saved:[/bold green] {report_path}")
+
+    # Also save to storage for the web dashboard
+    save_audit(audit)
 
     return audit
 
 
 def _print_results(audit: SiteAudit) -> None:
     """Print audit results to terminal."""
-    # Score
     score = audit.overall_score
     if score < 40:
         score_style = "bold red"
@@ -96,7 +96,6 @@ def _print_results(audit: SiteAudit) -> None:
         console.print("[green]No significant leaks detected.[/green]")
         return
 
-    # Leaks table
     table = Table(title=f"Revenue Leaks ({len(audit.leaks)} found)")
     table.add_column("Severity", style="bold", width=10)
     table.add_column("Type", width=20)
@@ -110,7 +109,6 @@ def _print_results(audit: SiteAudit) -> None:
         Severity.INFO: "dim",
     }
 
-    # Sort by severity
     severity_order = [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW, Severity.INFO]
     sorted_leaks = sorted(audit.leaks, key=lambda l: severity_order.index(l.severity))
 
@@ -125,95 +123,41 @@ def _print_results(audit: SiteAudit) -> None:
     console.print(table)
 
 
-async def batch_audit(
-    csv_path: str,
-    output_dir: str = "audits",
-    max_pages: int = 10,
-    quick: bool = False,
-) -> list[SiteAudit]:
-    """Run audits on all prospects in a CSV."""
-    prospects = load_prospects_from_csv(csv_path)
-    console.print(f"\n[bold]Batch audit:[/bold] {len(prospects)} prospects from {csv_path}")
+# ── CLI ──────────────────────────────────────────────────────
 
-    os.makedirs(output_dir, exist_ok=True)
-    audits = []
-
-    for i, prospect in enumerate(prospects, 1):
-        console.print(f"\n[bold]--- [{i}/{len(prospects)}] {prospect.name or prospect.url} ---[/bold]")
-
-        safe_name = prospect.url.replace("https://", "").replace("http://", "").replace("/", "_").rstrip("_")
-        output_path = os.path.join(output_dir, f"{safe_name}.html")
-
-        try:
-            audit = await audit_url(
-                prospect.url,
-                max_pages=max_pages,
-                quick=quick,
-                output=output_path,
-            )
-            audit.business_name = prospect.name
-            audits.append(audit)
-        except Exception as e:
-            console.print(f"[red]Error scanning {prospect.url}: {e}[/red]")
-
-    # Summary
-    console.print(f"\n\n[bold]{'='*60}[/bold]")
-    console.print(f"[bold]Batch complete:[/bold] {len(audits)}/{len(prospects)} scanned")
-    console.print(f"[bold]Reports saved to:[/bold] {output_dir}/")
-
-    # Summary table
-    table = Table(title="Batch Results Summary")
-    table.add_column("Business", width=30)
-    table.add_column("Score", width=8, justify="center")
-    table.add_column("Leaks", width=8, justify="center")
-    table.add_column("Est. Waste", width=25)
-
-    for audit in sorted(audits, key=lambda a: a.overall_score):
-        score = audit.overall_score
-        if score < 40:
-            style = "red"
-        elif score < 70:
-            style = "yellow"
-        else:
-            style = "green"
-
-        table.add_row(
-            audit.business_name or audit.url,
-            f"[{style}]{score}[/{style}]",
-            str(len(audit.leaks)),
-            audit.estimated_monthly_waste,
-        )
-
-    console.print(table)
-
-    return audits
+@click.group()
+def cli():
+    """LeakEngine — Find and exploit revenue leaks in business websites."""
+    pass
 
 
-@click.command()
+@cli.command()
 @click.option("--url", help="Single URL to audit")
 @click.option("--batch", "batch_csv", help="CSV file of prospects to batch audit")
-@click.option("--output", "-o", help="Output file path (for single URL)")
-@click.option("--output-dir", default="audits", help="Output directory (for batch)")
+@click.option("--output", "-o", help="Output file path")
+@click.option("--output-dir", default="output/reports", help="Output directory (for batch)")
 @click.option("--max-pages", default=15, help="Max pages to crawl per site")
 @click.option("--quick", is_flag=True, help="Quick scan (homepage only)")
-@click.option("--screenshots", is_flag=True, help="Capture screenshots (requires playwright)")
-def main(
-    url: str | None,
-    batch_csv: str | None,
-    output: str | None,
-    output_dir: str,
-    max_pages: int,
-    quick: bool,
-    screenshots: bool,
-) -> None:
-    """LeakEngine — Find revenue leaks in business websites."""
+@click.option("--screenshots", is_flag=True, help="Capture screenshots")
+def scan(url, batch_csv, output, output_dir, max_pages, quick, screenshots):
+    """Scan a URL or batch of URLs for revenue leaks."""
     if not url and not batch_csv:
         console.print("[red]Provide --url or --batch[/red]")
-        console.print("Example: python main.py --url https://example.com")
         sys.exit(1)
 
     if batch_csv:
-        asyncio.run(batch_audit(batch_csv, output_dir, max_pages, quick))
+        prospects = load_prospects_from_csv(batch_csv)
+        console.print(f"\n[bold]Batch audit:[/bold] {len(prospects)} prospects")
+        os.makedirs(output_dir, exist_ok=True)
+
+        for i, prospect in enumerate(prospects, 1):
+            console.print(f"\n[bold]--- [{i}/{len(prospects)}] {prospect.name or prospect.url} ---[/bold]")
+            safe = prospect.url.replace("https://", "").replace("http://", "").replace("/", "_").rstrip("_")
+            out_path = os.path.join(output_dir, f"{safe}.html")
+            try:
+                asyncio.run(audit_url(prospect.url, max_pages, quick, screenshots, out_path))
+            except Exception as e:
+                console.print(f"[red]Error: {e}[/red]")
     else:
         if not output:
             safe = url.replace("https://", "").replace("http://", "").replace("/", "_").rstrip("_")
@@ -221,5 +165,64 @@ def main(
         asyncio.run(audit_url(url, max_pages, quick, screenshots, output))
 
 
+@cli.command()
+def pipeline():
+    """Run the full automated pipeline (discover -> scan -> score -> store)."""
+    from pipeline import run_full_pipeline
+    asyncio.run(run_full_pipeline())
+
+
+@cli.command()
+@click.option("--host", default="0.0.0.0", help="Host to bind to")
+@click.option("--port", default=5000, help="Port to bind to")
+def server(host, port):
+    """Start the web dashboard."""
+    from config import generate_default_config
+    from pathlib import Path
+
+    if not Path("config.yaml").exists():
+        generate_default_config()
+        console.print("[yellow]Generated default config.yaml — edit it to configure niches and locations.[/yellow]")
+
+    os.makedirs("output/reports", exist_ok=True)
+    os.makedirs("output/data", exist_ok=True)
+
+    console.print(f"\n[bold green]LeakEngine Dashboard[/bold green]")
+    console.print(f"http://{host}:{port}\n")
+
+    from app import app
+    app.run(debug=True, host=host, port=port)
+
+
+@cli.command()
+@click.option("--interval", default=24.0, help="Hours between pipeline runs")
+def scheduler(interval):
+    """Run the pipeline on a repeating schedule."""
+    from scheduler import run_scheduler
+    run_scheduler(interval)
+
+
+@cli.command()
+def init():
+    """Initialize config and output directories."""
+    from config import generate_default_config
+    from pathlib import Path
+
+    if not Path("config.yaml").exists():
+        generate_default_config()
+        console.print("[green]Created config.yaml[/green]")
+    else:
+        console.print("[yellow]config.yaml already exists[/yellow]")
+
+    for d in ["output/reports", "output/data", "output/screenshots", "output/logs"]:
+        os.makedirs(d, exist_ok=True)
+    console.print("[green]Created output directories[/green]")
+    console.print("\n[bold]Next steps:[/bold]")
+    console.print("  1. Edit config.yaml to set your target niches and locations")
+    console.print("  2. Run: python main.py pipeline")
+    console.print("  3. Run: python main.py server")
+    console.print("  4. Open: http://localhost:5000")
+
+
 if __name__ == "__main__":
-    main()
+    cli()
