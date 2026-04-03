@@ -48,7 +48,7 @@
       {% if leak.estimated_monthly_impact %}
       <div class="leak-impact">Impact: {{ leak.estimated_monthly_impact }}</div>
       {% endif %}
-      <div class="text-sm text-muted" style="margin-top: 4px;">Page: {{ leak.page_url }}</div>
+      <div class="text-sm text-muted url-truncate" style="margin-top: 4px;">Page: {{ leak.page_url }}</div>
     </div>
     {% endfor %}
   </div>
@@ -58,6 +58,7 @@
 {% if audit.pages_scanned %}
 <div class="panel">
   <h3>Pages Scanned ({{ audit.pages_scanned | length }})</h3>
+  <div class="table-scroll">
   <table style="margin-top: 12px;">
     <thead>
       <tr>
@@ -92,6 +93,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% endif %}
 

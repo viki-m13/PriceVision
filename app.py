@@ -36,12 +36,16 @@ _pipeline_lock = threading.Lock()
 
 
 _PROJECT_ROOT = Path(__file__).parent
+_IS_VERCEL = bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"))
+
 
 def _get_config() -> Config:
     config_path = _PROJECT_ROOT / "config.yaml"
-    if not config_path.exists():
-        generate_default_config(config_path)
-    return load_config(config_path)
+    if config_path.exists():
+        return load_config(config_path)
+    # On Vercel or when config doesn't exist, use defaults + env vars
+    return load_config(config_path)  # load_config handles missing file
+
 
 def _reports_dir() -> Path:
     return Path(os.environ.get("LEAKENGINE_REPORTS_DIR", "output/reports"))
@@ -224,6 +228,7 @@ def pipeline_page():
         pipeline_log=pipeline_log,
         is_running=_pipeline_running,
         unscanned_count=len(unscanned),
+        is_vercel=_IS_VERCEL,
     )
 
 
@@ -242,38 +247,27 @@ def update_config():
     config.prospector.serpapi_key = request.form.get("serpapi_key", "")
     config.prospector.google_cse_id = request.form.get("google_cse_id", "")
 
-    # Save to config.yaml
-    import yaml
-    data = {
-        "smtp": {},
-        "scan": {
-            "max_pages": config.scan.max_pages,
-            "timeout_seconds": config.scan.timeout_seconds,
-            "check_external_links": config.scan.check_external_links,
-            "capture_screenshots": config.scan.capture_screenshots,
-            "concurrent_scans": config.scan.concurrent_scans,
-            "delay_between_scans_seconds": config.scan.delay_between_scans_seconds,
-        },
-        "prospector": {
-            "niches": config.prospector.niches,
-            "locations": config.prospector.locations,
-            "max_prospects_per_search": config.prospector.max_prospects_per_search,
-            "google_api_key": config.prospector.google_api_key,
-            "google_cse_id": config.prospector.google_cse_id,
-            "serpapi_key": config.prospector.serpapi_key,
-        },
-        "pipeline": {
-            "output_dir": config.pipeline.output_dir,
-            "reports_dir": config.pipeline.reports_dir,
-            "data_dir": config.pipeline.data_dir,
-            "screenshots_dir": config.pipeline.screenshots_dir,
-            "log_dir": config.pipeline.log_dir,
-            "schedule_interval_hours": config.pipeline.schedule_interval_hours,
-        },
-    }
-    config_path = _PROJECT_ROOT / "config.yaml"
-    with open(config_path, "w") as f:
-        yaml.dump(data, f, default_flow_style=False)
+    # Save to config.yaml (skip on Vercel — read-only filesystem)
+    if not _IS_VERCEL:
+        try:
+            import yaml
+            data = {
+                "scan": {
+                    "max_pages": config.scan.max_pages,
+                    "delay_between_scans_seconds": config.scan.delay_between_scans_seconds,
+                },
+                "prospector": {
+                    "niches": config.prospector.niches,
+                    "locations": config.prospector.locations,
+                    "serpapi_key": config.prospector.serpapi_key,
+                    "google_cse_id": config.prospector.google_cse_id,
+                },
+            }
+            config_path = _PROJECT_ROOT / "config.yaml"
+            with open(config_path, "w") as f:
+                yaml.dump(data, f, default_flow_style=False)
+        except Exception:
+            pass
 
     return redirect(url_for("pipeline_page"))
 
@@ -301,7 +295,10 @@ def _run_async_in_thread(coro):
 
 @app.route("/run-pipeline")
 def run_pipeline():
-    """Run the full pipeline in background."""
+    """Run the full pipeline."""
+    if _IS_VERCEL:
+        # Vercel serverless can't run long background tasks
+        return redirect(url_for("pipeline_page"))
     from pipeline import run_full_pipeline
     config = _get_config()
     _run_async_in_thread(run_full_pipeline(config))
@@ -310,7 +307,9 @@ def run_pipeline():
 
 @app.route("/discover")
 def run_discovery():
-    """Run discovery only in background."""
+    """Run discovery only."""
+    if _IS_VERCEL:
+        return redirect(url_for("prospects_page"))
     from pipeline import run_discovery as _run_discovery
     config = _get_config()
     _run_async_in_thread(_run_discovery(config))
@@ -319,7 +318,9 @@ def run_discovery():
 
 @app.route("/scan-all")
 def scan_all():
-    """Scan all unscanned prospects in background."""
+    """Scan all unscanned prospects."""
+    if _IS_VERCEL:
+        return redirect(url_for("audits_page"))
     from pipeline import run_scanning
     config = _get_config()
     _run_async_in_thread(run_scanning(config))
@@ -333,7 +334,7 @@ def scan_url():
     if not url:
         return redirect(url_for("prospects_page"))
 
-    from scanner.crawl import crawl_site
+    from scanner.crawl import crawl_site, quick_scan
     from scorer.engine import score_site
     from reporter.html_report import save_report
     from datetime import datetime, timezone
@@ -341,7 +342,12 @@ def scan_url():
     config = _get_config()
 
     async def _scan():
-        pages = await crawl_site(url, max_pages=config.scan.max_pages)
+        if _IS_VERCEL:
+            # Quick scan on Vercel (10s serverless timeout)
+            page = await quick_scan(url)
+            pages = [page]
+        else:
+            pages = await crawl_site(url, max_pages=config.scan.max_pages)
         audit = score_site(pages, url)
         audit.scanned_at = datetime.now(timezone.utc).isoformat()
 

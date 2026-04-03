@@ -2,7 +2,7 @@
 {% block title %}Prospects - LeakEngine{% endblock %}
 {% block content %}
 
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
   <h1 style="font-size: 20px;">Prospects ({{ prospects | length }})</h1>
   <div class="flex gap-8">
     <a href="/discover" class="btn btn-primary" onclick="this.textContent='Discovering...'; this.style.opacity=0.6;">Discover New</a>
@@ -12,6 +12,7 @@
 
 {% if prospects %}
 <div class="table-wrap">
+  <div class="table-scroll">
   <table>
     <thead>
       <tr>
@@ -28,10 +29,10 @@
       <tr>
         <td>
           <div style="font-weight: 600;">{{ p.name or 'Unknown' }}</div>
-          <div class="text-sm text-muted">{{ p.url }}</div>
+          <div class="text-sm text-muted url-truncate">{{ p.url }}</div>
         </td>
         <td>{{ p.niche or '-' }}</td>
-        <td>{{ p.location or '-' }}</td>
+        <td style="white-space: nowrap;">{{ p.location or '-' }}</td>
         <td><span class="text-sm">{{ p.source or '-' }}</span></td>
         <td>
           {% if p.url in audited_urls %}
@@ -47,6 +48,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% else %}
 <div class="empty-state">
@@ -58,24 +60,28 @@
 
 <div class="panel mt-16">
   <h3>Add Prospect Manually</h3>
-  <form action="/add-prospect" method="POST" style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
-    <div class="form-group" style="flex: 2; margin-bottom: 0;">
-      <label>Website URL</label>
-      <input type="text" name="url" placeholder="https://example-business.com" required>
+  <form action="/add-prospect" method="POST">
+    <div style="display: grid; grid-template-columns: 1fr; gap: 12px;" class="form-grid">
+      <div class="form-group" style="margin-bottom: 0;">
+        <label>Website URL</label>
+        <input type="url" name="url" placeholder="https://example-business.com" required>
+      </div>
+      <div class="form-group" style="margin-bottom: 0;">
+        <label>Business Name</label>
+        <input type="text" name="name" placeholder="Business Name">
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div class="form-group" style="margin-bottom: 0;">
+          <label>Niche</label>
+          <input type="text" name="niche" placeholder="plumber">
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label>Location</label>
+          <input type="text" name="location" placeholder="Austin TX">
+        </div>
+      </div>
     </div>
-    <div class="form-group" style="flex: 1; margin-bottom: 0;">
-      <label>Business Name</label>
-      <input type="text" name="name" placeholder="Business Name">
-    </div>
-    <div class="form-group" style="flex: 1; margin-bottom: 0;">
-      <label>Niche</label>
-      <input type="text" name="niche" placeholder="plumber">
-    </div>
-    <div class="form-group" style="flex: 1; margin-bottom: 0;">
-      <label>Location</label>
-      <input type="text" name="location" placeholder="Austin TX">
-    </div>
-    <button type="submit" class="btn btn-primary" style="height: 38px;">Add & Scan</button>
+    <button type="submit" class="btn btn-primary" style="margin-top: 12px; width: 100%;">Add & Scan</button>
   </form>
 </div>
 

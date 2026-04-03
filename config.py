@@ -9,7 +9,10 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import yaml
+try:
+    import yaml
+except ImportError:
+    yaml = None
 
 
 CONFIG_PATH = Path("config.yaml")

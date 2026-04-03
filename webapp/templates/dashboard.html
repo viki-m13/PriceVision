@@ -47,6 +47,7 @@
   <div class="table-header">
     <h2>Worst Scoring Sites (Best Outreach Targets)</h2>
   </div>
+  <div class="table-scroll">
   <table>
     <thead>
       <tr>
@@ -62,19 +63,22 @@
       <tr>
         <td>
           <div style="font-weight: 600;">{{ audit.business_name or audit.url }}</div>
-          <div class="text-sm text-muted">{{ audit.url }}</div>
+          <div class="text-sm text-muted url-truncate">{{ audit.url }}</div>
         </td>
         <td><span class="score {{ 'bad' if audit.overall_score < 40 else ('ok' if audit.overall_score < 70 else 'good') }}">{{ audit.overall_score }}</span></td>
         <td>{{ audit.leaks | length }}</td>
-        <td style="color: #ffa502; font-weight: 600;">{{ audit.estimated_monthly_waste }}</td>
+        <td style="color: #ffa502; font-weight: 600; white-space: nowrap;">{{ audit.estimated_monthly_waste }}</td>
         <td>
+          <div class="flex gap-8">
           <a href="/audit/{{ audit.url | replace('https://', '') | replace('http://', '') | replace('/', '_') }}" class="btn btn-sm btn-secondary">View</a>
           <a href="/report/{{ audit.url | replace('https://', '') | replace('http://', '') | replace('/', '_') }}" class="btn btn-sm btn-primary">Report</a>
+          </div>
         </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% else %}
 <div class="empty-state">
